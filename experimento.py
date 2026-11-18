@@ -1,4 +1,4 @@
-# Corre un experimento del grupo targets: búsqueda bayesiana, modelos finales con todas las semillas
+# Corre un experimento del grupo targets: Optuna, modelos finales con todas las semillas
 # y curva de ganancia en 201910. Todos los experimentos usan este mismo script:
 # lo único que cambia entre ellos está en EXPERIMENTOS.
 #   python experimento.py --exp base
@@ -26,8 +26,11 @@ MES_VALIDACION = 201908
 MES_TEST = 201910
 CORTES = list(range(8_000, 15_001, 500))
 
-# Vector fijo de semillas (las de Fernando y las de Laura). El mismo para todos los experimentos.
-SEMILLAS = []
+# Vector fijo de semillas (de ambos, Fernando y Laura). El mismo para todos los experimentos.
+SEMILLAS = [
+    130399, 220391, 417577, 575753, 616261, 975935, 98956, 619348, 491242, 983565,
+    777781, 500041, 600011, 800077, 200023, 388890, 1555565, 790126, 250020, 1000085,
+]
 
 MESES_BASE = {"busqueda": [201903, 201904, 201905, 201906],
               "final": [201903, 201904, 201905, 201906, 201907, 201908]}
