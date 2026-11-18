@@ -32,7 +32,7 @@ Todos validan con AUC en 201908 contra BAJA+2 y se evalúan con la ganancia en 2
 **`preparar_datos.py`** se corre una sola vez. Lee del crudo solo 2019, calcula `clase_ternaria` y `clase_extendida` (que agrega BAJA+3) y los lags y deltas de 1 y 2 meses de todas las variables numéricas, sin rellenar nulos. Guarda todo en un parquet. También genera `control_meses.csv`, con la proporción de ceros y de nulos de cada variable en cada mes, para detectar meses con datos rotos.
 
 **`experimento.py`** se corre una vez por experimento (`--exp base`, `A`, `B`, `C1`, `C2`, `D` o `E`).
-- **Búsqueda:** optimización bayesiana con Optuna sobre `num_leaves`, `learning_rate`, `min_data_in_leaf`, `feature_fraction` y `bagging_fraction`, con los rangos del notebook `z601_clases.ipynb`. `bagging_freq` está fijo en 1 y `max_bin` en 31, como en ese notebook. El resto de los hiperparámetros queda en el default de LightGBM.
+- **Búsqueda:** optimización bayesiana con Optuna sobre `num_leaves`, `learning_rate`, `min_data_in_leaf`, `feature_fraction` y `bagging_fraction`, con los rangos del notebook `z601_clases.ipynb`, salvo `min_data_in_leaf`, que buscamos entre 1 y 5.000 en lugar de 1 y 1.000 porque en una primera corrida del baseline los mejores trials quedaban pegados al techo. `bagging_freq` está fijo en 1 y `max_bin` en 31, como en ese notebook. El resto de los hiperparámetros queda en el default de LightGBM.
 - **Modelo final:** se entrena con los hiperparámetros del mejor trial y su cantidad de árboles, una vez por cada semilla.
 - **Retomar:** si la VM se apaga, la búsqueda sigue desde el último trial guardado.
 

@@ -122,7 +122,8 @@ def objective(trial):
         **params_fijos,
         "num_leaves": trial.suggest_int("num_leaves", 8, 100),
         "learning_rate": trial.suggest_float("learning_rate", 0.005, 0.3),
-        "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 1, 1000),
+        # Ampliado de 1.000 (z601) a 5.000: con 1.000, los mejores trials del baseline quedaban pegados al techo
+        "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 1, 5000),
         "feature_fraction": trial.suggest_float("feature_fraction", 0.1, 1.0),
         "bagging_fraction": trial.suggest_float("bagging_fraction", 0.1, 1.0),
         "seed": SEMILLAS[0],
