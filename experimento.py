@@ -18,13 +18,18 @@ parser.add_argument("--exp", required=True)
 parser.add_argument("--datos", default="competencia_02_2019.parquet")
 parser.add_argument("--salida", default="resultados")
 parser.add_argument("--trials", type=int, default=50)
+parser.add_argument("--prueba", action="store_true",
+                    help="Corrida corta con datos reales: 10%% de los clientes, 2 trials y 2 semillas")
 args = parser.parse_args()
 
 GANANCIA_ACIERTO = 1_072_500
 COSTO_ESTIMULO = 27_500
+MES_JULIO = 201907  # ningún modelo de la búsqueda lo ve: sirve para elegir los pesos del ensamble
 MES_VALIDACION = 201908
 MES_TEST = 201910
-CORTES = list(range(8_000, 15_001, 500))
+# En 2019 el máximo de ganancia está cerca de 4.000-4.500 envíos. El rango se fija antes de mirar 201910.
+CORTES = list(range(2_500, 6_501, 250))
+FRACCION_PRUEBA = 0.10
 
 # Vector fijo de semillas (de ambos, Fernando y Laura). El mismo para todos los experimentos.
 SEMILLAS = [
@@ -72,25 +77,35 @@ def ganancia_por_corte(prob, clase):
 
 conf = EXPERIMENTOS[args.exp]
 assert len(SEMILLAS) >= 10, "Completar SEMILLAS con el vector fijo del grupo"
-carpeta = os.path.join(args.salida, args.exp)
+# La prueba usa otra carpeta y otro estudio de Optuna, así no se mezcla con la corrida real
+nombre = f"{args.exp}_prueba" if args.prueba else args.exp
+semillas = SEMILLAS[:2] if args.prueba else SEMILLAS
+n_trials = 2 if args.prueba else args.trials
+carpeta = os.path.join(args.salida, nombre)
 os.makedirs(carpeta, exist_ok=True)
 
 # ---------------------------------------------------------------- datos
 datos = pd.read_parquet(args.datos)
-meses_usados = set(conf["meses"]["final"]) | {MES_VALIDACION, MES_TEST}
+meses_usados = set(conf["meses"]["final"]) | {MES_JULIO, MES_VALIDACION, MES_TEST}
 datos = datos[datos["foto_mes"].isin(meses_usados)].copy()
+if args.prueba:
+    clientes = datos["numero_de_cliente"].drop_duplicates().sample(frac=FRACCION_PRUEBA,
+                                                                  random_state=SEMILLAS[0])
+    datos = datos[datos["numero_de_cliente"].isin(clientes)].copy()
 features = [c for c in datos.columns
             if c not in COLUMNAS_NO_FEATURES and pd.api.types.is_numeric_dtype(datos[c])]
 datos[features] = datos[features].astype("float32")
 print(f"Experimento {args.exp}: {len(features)} variables, {len(datos):,} filas")
 
 busqueda = datos[datos["foto_mes"].isin(conf["meses"]["busqueda"])]
+julio = datos[datos["foto_mes"] == MES_JULIO]
 validacion = datos[datos["foto_mes"] == MES_VALIDACION]
 final = datos[datos["foto_mes"].isin(conf["meses"]["final"])]
 test = datos[datos["foto_mes"] == MES_TEST]
 
 objetivo = "regression" if conf.get("regresion") else "binary"
-params_fijos = {"objective": objetivo, "metric": "auc", "bagging_freq": 1,
+# max_bin = 31 como en el notebook z601_clases.ipynb de la cátedra
+params_fijos = {"objective": objetivo, "metric": "auc", "bagging_freq": 1, "max_bin": 31,
                 "feature_pre_filter": False, "verbose": -1}
 
 dtrain = lgb.Dataset(busqueda[features], label=target(busqueda["clase_extendida"], conf),
@@ -107,7 +122,8 @@ def objective(trial):
         **params_fijos,
         "num_leaves": trial.suggest_int("num_leaves", 8, 100),
         "learning_rate": trial.suggest_float("learning_rate", 0.005, 0.3),
-        "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 1, 1000),
+        # Ampliado de 1.000 (z601) a 5.000: con 1.000, los mejores trials del baseline quedaban pegados al techo
+        "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 1, 5000),
         "feature_fraction": trial.suggest_float("feature_fraction", 0.1, 1.0),
         "bagging_fraction": trial.suggest_float("bagging_fraction", 0.1, 1.0),
         "seed": SEMILLAS[0],
@@ -123,17 +139,18 @@ def objective(trial):
 
 # La base de Optuna se guarda en el disco de la máquina y se copia a la carpeta de salida (el bucket)
 # después de cada trial. Si Google apaga la máquina, la búsqueda retoma desde la copia.
-# El nombre incluye la carpeta de salida, para que dos corridas distintas nunca compartan búsqueda
-db_local = os.path.join(os.path.expanduser("~"), "optuna_" + carpeta.strip("/~").replace("/", "_") + ".db")
+# El nombre local incluye la carpeta de salida, para que dos corridas distintas nunca compartan búsqueda.
+db_local = os.path.join(os.path.expanduser("~"),
+                        "optuna_" + os.path.abspath(carpeta).strip("/").replace("/", "_") + ".db")
 db_copia = os.path.join(carpeta, "optuna.db")
 if not os.path.exists(db_local) and os.path.exists(db_copia):
     shutil.copy(db_copia, db_local)
 
-estudio = optuna.create_study(direction="maximize", study_name=args.exp,
+estudio = optuna.create_study(direction="maximize", study_name=nombre,
                               storage=f"sqlite:///{db_local}", load_if_exists=True,
                               sampler=optuna.samplers.TPESampler(seed=SEMILLAS[0]))
 hechos = len([t for t in estudio.trials if t.state == optuna.trial.TrialState.COMPLETE])
-faltan = max(0, args.trials - hechos)
+faltan = max(0, n_trials - hechos)
 print(f"Trials completos: {hechos}. Faltan: {faltan}")
 inicio = time.time()
 estudio.optimize(objective, n_trials=faltan,
@@ -154,18 +171,20 @@ def entrenar(tabla, semilla):
     return lgb.train(params_modelo(semilla), dataset, num_boost_round=mejor.user_attrs["best_iter"])
 
 
-# ---------------------------------------------------------------- predicción de agosto para los pesos del ensamble
-# El mejor trial reentrenado con los meses de búsqueda (no vio agosto) y la primera semilla
-modelo_agosto = entrenar(busqueda, SEMILLAS[0])
-pd.DataFrame({"numero_de_cliente": validacion["numero_de_cliente"],
-              "prediccion": modelo_agosto.predict(validacion[features]),
-              "clase_ternaria": validacion["clase_ternaria"]}
-             ).to_csv(os.path.join(carpeta, "prediccion_agosto.csv"), index=False)
+# ---------------------------------------------------------------- predicciones de julio y agosto para los pesos del ensamble
+# El mejor trial reentrenado con los meses de búsqueda y la primera semilla. No vio ni julio ni agosto.
+# Julio no se usó para nada: los pesos se eligen ahí y se confirman en agosto.
+modelo_busqueda = entrenar(busqueda, SEMILLAS[0])
+for mes, tabla in [("julio", julio), ("agosto", validacion)]:
+    pd.DataFrame({"numero_de_cliente": tabla["numero_de_cliente"],
+                  "prediccion": modelo_busqueda.predict(tabla[features]),
+                  "clase_ternaria": tabla["clase_ternaria"]}
+                 ).to_csv(os.path.join(carpeta, f"prediccion_{mes}.csv"), index=False)
 
 # ---------------------------------------------------------------- modelos finales y ganancia en octubre
 predicciones = {"numero_de_cliente": test["numero_de_cliente"].to_numpy()}
 filas = []
-for semilla in SEMILLAS:
+for semilla in semillas:
     modelo = entrenar(final, semilla)
     prob = modelo.predict(test[features])
     predicciones[f"semilla_{semilla}"] = prob
@@ -177,7 +196,7 @@ pd.DataFrame(predicciones).to_csv(os.path.join(carpeta, "prediccion_octubre.csv"
 curvas = pd.DataFrame(filas)
 curvas.to_csv(os.path.join(carpeta, "ganancia_octubre.csv"), index=False)
 resumen = curvas.groupby("semilla")["ganancia"].mean()
-print(f"Promedio de la curva 8.000-15.000: media {resumen.mean():,.0f}, desvío {resumen.std():,.0f}")
+print(f"Promedio de la curva {CORTES[0]:,}-{CORTES[-1]:,}: media {resumen.mean():,.0f}, desvío {resumen.std():,.0f}")
 
 with open(os.path.join(carpeta, "mejor_trial.json"), "w") as f:
     json.dump({"auc_agosto": mejor.value, "params": mejor.params,
