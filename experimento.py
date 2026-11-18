@@ -123,7 +123,8 @@ def objective(trial):
 
 # La base de Optuna se guarda en el disco de la máquina y se copia a la carpeta de salida (el bucket)
 # después de cada trial. Si Google apaga la máquina, la búsqueda retoma desde la copia.
-db_local = os.path.join(os.path.expanduser("~"), f"optuna_{args.exp}.db")
+# El nombre incluye la carpeta de salida, para que dos corridas distintas nunca compartan búsqueda
+db_local = os.path.join(os.path.expanduser("~"), "optuna_" + carpeta.strip("/~").replace("/", "_") + ".db")
 db_copia = os.path.join(carpeta, "optuna.db")
 if not os.path.exists(db_local) and os.path.exists(db_copia):
     shutil.copy(db_copia, db_local)
