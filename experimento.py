@@ -189,7 +189,7 @@ for mes, tabla in [("julio", julio), ("agosto", validacion)]:
                  ).to_csv(os.path.join(carpeta, f"prediccion_{mes}.csv"), index=False)
 
 # Lo de la búsqueda ya no se usa: se libera antes de los modelos finales para no quedarse sin memoria
-del dtrain, dvalid, busqueda, julio, validacion, modelo_busqueda
+ del dtrain, dvalid, busqueda, julio, validacion, modelo_busqueda, tabla
 gc.collect()
 
 # ---------------------------------------------------------------- modelos finales y ganancia en octubre
