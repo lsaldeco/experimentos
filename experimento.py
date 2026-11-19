@@ -3,9 +3,11 @@
 # lo único que cambia entre ellos está en EXPERIMENTOS.
 #   python experimento.py --exp base
 import argparse
+import gc
 import json
 import os
 import shutil
+import sys
 import time
 
 import lightgbm as lgb
@@ -21,6 +23,9 @@ parser.add_argument("--trials", type=int, default=50)
 parser.add_argument("--prueba", action="store_true",
                     help="Corrida corta con datos reales: 10%% de los clientes, 2 trials y 2 semillas")
 args = parser.parse_args()
+
+# Cada mensaje se escribe en el log en el momento, aunque la salida vaya a un archivo
+sys.stdout.reconfigure(line_buffering=True)
 
 GANANCIA_ACIERTO = 1_072_500
 COSTO_ESTIMULO = 27_500
@@ -102,6 +107,8 @@ julio = datos[datos["foto_mes"] == MES_JULIO]
 validacion = datos[datos["foto_mes"] == MES_VALIDACION]
 final = datos[datos["foto_mes"].isin(conf["meses"]["final"])]
 test = datos[datos["foto_mes"] == MES_TEST]
+del datos  # cada mes ya quedó en su propia tabla
+gc.collect()
 
 objetivo = "regression" if conf.get("regresion") else "binary"
 # max_bin = 31 como en el notebook z601_clases.ipynb de la cátedra
@@ -180,6 +187,10 @@ for mes, tabla in [("julio", julio), ("agosto", validacion)]:
                   "prediccion": modelo_busqueda.predict(tabla[features]),
                   "clase_ternaria": tabla["clase_ternaria"]}
                  ).to_csv(os.path.join(carpeta, f"prediccion_{mes}.csv"), index=False)
+
+# Lo de la búsqueda ya no se usa: se libera antes de los modelos finales para no quedarse sin memoria
+del dtrain, dvalid, busqueda, julio, validacion, modelo_busqueda
+gc.collect()
 
 # ---------------------------------------------------------------- modelos finales y ganancia en octubre
 predicciones = {"numero_de_cliente": test["numero_de_cliente"].to_numpy()}
