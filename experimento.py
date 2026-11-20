@@ -56,6 +56,9 @@ EXPERIMENTOS = {
     "C2": {"positivos": ["BAJA+2", "BAJA+3"], "meses": MESES_BAJA3},
     "D": {"positivos": ["BAJA+1", "BAJA+2"], "meses": MESES_BASE, "peso_baja1": True},
     "E": {"positivos": ["BAJA+2"], "meses": MESES_BASE, "regresion": True},
+    # F: como D, pero también entra BAJA+3 con su propio peso. Usa los meses de C1 y C2.
+    "F": {"positivos": ["BAJA+1", "BAJA+2", "BAJA+3"], "meses": MESES_BAJA3,
+          "peso_baja1": True, "peso_baja3": True},
 }
 
 COLUMNAS_NO_FEATURES = ["numero_de_cliente", "foto_mes", "clase_ternaria", "clase_extendida"]
@@ -68,8 +71,15 @@ def target(clase, conf):
     return clase.isin(conf["positivos"]).astype(int).to_numpy()
 
 
-def pesos(clase, peso_baja1):
-    return np.where(clase == "BAJA+1", peso_baja1, 1.0)
+def pesos(clase, peso_baja1=1.0, peso_baja3=1.0):
+    """Peso de cada fila: BAJA+1 y BAJA+3 con el suyo, el resto con 1."""
+    return np.select([clase == "BAJA+1", clase == "BAJA+3"], [peso_baja1, peso_baja3], 1.0)
+
+
+def pesos_del_trial(params):
+    """Pesos que el experimento busca con Optuna. None si no busca ninguno."""
+    elegidos = {k: params[k] for k in ("peso_baja1", "peso_baja3") if k in params}
+    return elegidos or None
 
 
 def ganancia_por_corte(prob, clase):
@@ -135,9 +145,12 @@ def objective(trial):
         "bagging_fraction": trial.suggest_float("bagging_fraction", 0.1, 1.0),
         "seed": SEMILLAS[0],
     }
-    if conf.get("peso_baja1"):
-        peso = trial.suggest_float("peso_baja1", 0.0, 1.0)
-        dtrain.set_weight(pesos(busqueda["clase_extendida"], peso))
+    for nombre_peso in ("peso_baja1", "peso_baja3"):
+        if conf.get(nombre_peso):
+            trial.suggest_float(nombre_peso, 0.0, 1.0)
+    elegidos = pesos_del_trial(trial.params)
+    if elegidos:
+        dtrain.set_weight(pesos(busqueda["clase_extendida"], **elegidos))
     modelo = lgb.train(params, dtrain, num_boost_round=3000, valid_sets=[dvalid],
                        callbacks=[lgb.early_stopping(int(50 + 5 / params["learning_rate"]), verbose=False)])
     trial.set_user_attr("best_iter", modelo.best_iteration)
@@ -169,11 +182,13 @@ print(f"Búsqueda: {(time.time() - inicio) / 60:.1f} min. AUC agosto {mejor.valu
 def params_modelo(semilla):
     params = {**params_fijos, **mejor.params, "seed": semilla}
     params.pop("peso_baja1", None)
+    params.pop("peso_baja3", None)
     return params
 
 
 def entrenar(tabla, semilla):
-    peso = pesos(tabla["clase_extendida"], mejor.params["peso_baja1"]) if conf.get("peso_baja1") else None
+    elegidos = pesos_del_trial(mejor.params)
+    peso = pesos(tabla["clase_extendida"], **elegidos) if elegidos else None
     dataset = lgb.Dataset(tabla[features], label=target(tabla["clase_extendida"], conf), weight=peso)
     return lgb.train(params_modelo(semilla), dataset, num_boost_round=mejor.user_attrs["best_iter"])
 

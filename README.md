@@ -14,6 +14,7 @@ Probamos distintas definiciones del target para predecir BAJA+2 y las comparamos
 | C1 | BAJA+3 | Solo los que se van dentro de tres meses |
 | C2 | BAJA+2 y BAJA+3 | El positivo se amplía hacia el futuro |
 | D | BAJA+1 y BAJA+2 | BAJA+1 entra con un peso entre 0 y 1 que busca Optuna |
+| F | BAJA+1, BAJA+2 y BAJA+3 | BAJA+1 y BAJA+3 entran cada uno con un peso entre 0 y 1 que busca Optuna |
 | E | Target continuo | Regresión: BAJA+2 vale 1.072.500 y el resto −27.500 |
 
 Todo lo demás es igual en todos los experimentos: datos, variables, búsqueda de hiperparámetros, semillas y evaluación.
@@ -23,15 +24,15 @@ Todo lo demás es igual en todos los experimentos: datos, variables, búsqueda d
 | Experimentos | Búsqueda de hiperparámetros | Modelo final |
 |---|---|---|
 | base, A, B, D, E | Entrena con 201903–201906 | Entrena con 201903–201908 |
-| C1 y C2 | Entrena con 201903–201905 | Entrena con 201903–201907 |
+| C1, C2 y F | Entrena con 201903–201905 | Entrena con 201903–201907 |
 
-Todos validan con AUC en 201908 contra BAJA+2 y se evalúan con la ganancia en 201910. C1 y C2 pierden un mes porque BAJA+3 necesita saber si el cliente sigue tres meses después.
+Todos validan con AUC en 201908 contra BAJA+2 y se evalúan con la ganancia en 201910. C1, C2 y F pierden un mes porque BAJA+3 necesita saber si el cliente sigue tres meses después.
 
 ## Scripts
 
 **`preparar_datos.py`** se corre una sola vez. Lee del crudo solo 2019, calcula `clase_ternaria` y `clase_extendida` (que agrega BAJA+3) y los lags y deltas de 1 y 2 meses de todas las variables numéricas, sin rellenar nulos. Guarda todo en un parquet. También genera `control_meses.csv`, con la proporción de ceros y de nulos de cada variable en cada mes, para detectar meses con datos rotos.
 
-**`experimento.py`** se corre una vez por experimento (`--exp base`, `A`, `B`, `C1`, `C2`, `D` o `E`).
+**`experimento.py`** se corre una vez por experimento (`--exp base`, `A`, `B`, `C1`, `C2`, `D`, `E` o `F`).
 - **Búsqueda:** optimización bayesiana con Optuna sobre `num_leaves`, `learning_rate`, `min_data_in_leaf`, `feature_fraction` y `bagging_fraction`, con los rangos del notebook `z601_clases.ipynb`, salvo `min_data_in_leaf`, que buscamos entre 1 y 5.000 en lugar de 1 y 1.000 porque en una primera corrida del baseline los mejores trials quedaban pegados al techo. `bagging_freq` está fijo en 1 y `max_bin` en 31, como en ese notebook. El resto de los hiperparámetros queda en el default de LightGBM.
 - **Modelo final:** se entrena con los hiperparámetros del mejor trial y su cantidad de árboles, una vez por cada semilla.
 - **Retomar:** si la VM se apaga, la búsqueda sigue desde el último trial guardado.
