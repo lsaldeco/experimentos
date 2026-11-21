@@ -1,0 +1,13 @@
+{
+  "auc_agosto": 0.9144082774919471,
+  "params": {
+    "num_leaves": 41,
+    "learning_rate": 0.0394630941011856,
+    "min_data_in_leaf": 3577,
+    "feature_fraction": 0.29703224808997264,
+    "bagging_fraction": 0.7197394558173765,
+    "peso_baja1": 0.399426379234621
+  },
+  "best_iter": 168,
+  "trials": 51
+}

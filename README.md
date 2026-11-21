@@ -37,6 +37,11 @@ Todos validan con AUC en 201908 contra BAJA+2 y se evalúan con la ganancia en 2
 - **Modelo final:** se entrena con los hiperparámetros del mejor trial y su cantidad de árboles, una vez por cada semilla.
 - **Retomar:** si la VM se apaga, la búsqueda sigue desde el último trial guardado.
 
+**`variantes.py`** agrega dos pruebas que no estaban en el diseño original. No hace búsqueda nueva: usa los hiperparámetros del `mejor_trial.json` de cada experimento (los de C1 y D, que corrió Laura, están copiados en `mejor_trials/`).
+- **`--modo arboles`:** la cantidad de árboles del modelo final se elige con early stopping sobre un 10% de clientes separado del mismo período del modelo final, con todos sus meses. El test sigue siendo 201910. Responde a la duda de que los árboles se elijan entrenando con un período más corto que el del modelo final.
+- **`--modo septiembre`:** segundo mes de test, 201909. El modelo final entrena con un mes menos que el original, para dejar el mismo hueco de dos meses, y usa los árboles del mejor trial.
+- Los resultados van a `<experimento>/arboles/` y `<experimento>/septiembre/`. Si una variante ya tiene su `resumen.json`, se saltea.
+
 ## Cómo correrlo en Google Cloud
 
 Con el crudo en el bucket (`~/buckets/b1/datasets/competencia_02_crudo.csv.gz`), desde la carpeta del repo:
